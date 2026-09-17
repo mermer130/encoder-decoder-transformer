@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Encoder-Decoder Transformer</title>
+  <style>
+    :root { color-scheme: light; --bg:#fff; --surface:#fafafa; --border:#e4e4e7; --text:#18181b; --muted:#71717a; --mono:ui-monospace,SFMono-Regular,Menlo,monospace; --sans:ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    @media (prefers-color-scheme: dark) { :root { color-scheme: dark; --bg:#09090b; --surface:#18181b; --border:#27272a; --text:#fafafa; --muted:#a1a1aa; } }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:var(--sans); background:var(--bg); color:var(--text); line-height:1.6; -webkit-font-smoothing:antialiased; }
+    .hero { min-height:42vh; display:flex; align-items:center; justify-content:center; padding:64px 24px 40px; background:linear-gradient(135deg,var(--surface),var(--bg)); }
+    h1 { font-family:var(--mono); font-size:clamp(28px,4.6vw,44px); letter-spacing:-.03em; margin:0; text-align:center; line-height:1.2; }
+    .wrap { max-width:760px; margin:0 auto; padding:0 24px 80px; }
+    p { color:var(--muted); }
+    code { font-family:var(--mono); font-size:.92em; }
+    .how { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px 24px; margin:28px 0 40px; }
+    .how h2, .steps h2 { font-family:var(--mono); font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:0 0 12px; }
+    ul { list-style:none; padding:0; margin:0; }
+    li { display:flex; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); font-family:var(--mono); font-size:14px; }
+    li span { color:var(--muted); min-width:2.2em; }
+    li.done { color:var(--muted); text-decoration:line-through; }
+    .foot { margin-top:48px; padding-top:20px; border-top:1px solid var(--border); color:var(--muted); font-size:13px; }
+    .foot a { color:var(--text); text-decoration:none; }
+  </style>
+</head>
+<body>
+  <section class="hero"><h1>Encoder-Decoder Transformer</h1></section>
+  <div class="wrap">
+    <p>按 Encoder-Decoder 结构手写完整模型：词嵌入、正弦位置编码、多头注意力、Post-Norm、真实 Adam 与解码。每一步对应一个 nn.Module 或训练/推理接口。</p>
+    <div class="how">
+      <h2>How to run</h2>
+      <p><code>python scaffold.py</code></p>
+    </div>
+    <div class="steps"><h2>Steps</h2><ul><li class="done"><span>1.</span> __init__</li>
+          <li class=""><span>2.</span> 正弦位置编码矩阵</li>
+          <li class=""><span>3.</span> __init__</li>
+          <li class=""><span>4.</span> 源端 Padding 掩码</li>
+          <li class=""><span>5.</span> 因果下三角掩码</li>
+          <li class=""><span>6.</span> 目标端 Padding 与因果掩码</li>
+          <li class=""><span>7.</span> 目标序列右移</li>
+          <li class=""><span>8.</span> 缩放注意力分数</li>
+          <li class=""><span>9.</span> 注意力掩码填负无穷</li>
+          <li class=""><span>10.</span> 注意力 Softmax</li>
+          <li class=""><span>11.</span> 注意力权重 Dropout</li>
+          <li class=""><span>12.</span> 权重乘 Value</li>
+          <li class=""><span>13.</span> 缩放点积注意力</li>
+          <li class=""><span>14.</span> 最后一维拆成多头</li>
+          <li class=""><span>15.</span> 多头合并回模型维</li>
+          <li class=""><span>16.</span> __init__</li>
+          <li class=""><span>17.</span> self_attention_forward</li>
+          <li class=""><span>18.</span> cross_attention_forward</li>
+          <li class=""><span>19.</span> __init__</li>
+          <li class=""><span>20.</span> 残差分支 Dropout</li>
+          <li class=""><span>21.</span> __init__</li>
+          <li class=""><span>22.</span> FFN 第一层 ReLU</li>
+          <li class=""><span>23.</span> __init__</li>
+          <li class=""><span>24.</span> feed_forward_hidden</li>
+          <li class=""><span>25.</span> feed_forward_forward</li>
+          <li class=""><span>26.</span> 构造编码器注意力</li>
+          <li class=""><span>27.</span> 构造编码器前馈</li>
+          <li class=""><span>28.</span> __init__</li>
+          <li class=""><span>29.</span> encoder_layer_forward</li>
+          <li class=""><span>30.</span> clone_encoder_layer</li>
+          <li class=""><span>31.</span> __init__</li>
+          <li class=""><span>32.</span> encoder_forward</li>
+          <li class=""><span>33.</span> encoder_state_dict</li>
+          <li class=""><span>34.</span> 构造 N 层编码器</li>
+          <li class=""><span>35.</span> 解码器自注意力掩码</li>
+          <li class=""><span>36.</span> decoder_self_attention</li>
+          <li class=""><span>37.</span> decoder_cross_attention</li>
+          <li class=""><span>38.</span> decoder_feed_forward</li>
+          <li class=""><span>39.</span> __init__</li>
+          <li class=""><span>40.</span> decoder_layer_forward</li>
+          <li class=""><span>41.</span> clone_decoder_layer</li>
+          <li class=""><span>42.</span> __init__</li>
+          <li class=""><span>43.</span> decoder_forward</li>
+          <li class=""><span>44.</span> decoder_state_dict</li>
+          <li class=""><span>45.</span> 构造 N 层解码器</li>
+          <li class=""><span>46.</span> decoder_output_shape</li>
+          <li class=""><span>47.</span> __init__</li>
+          <li class=""><span>48.</span> generator_forward</li>
+          <li class=""><span>49.</span> __init__</li>
+          <li class=""><span>50.</span> encode_source</li>
+          <li class=""><span>51.</span> decode_target</li>
+          <li class=""><span>52.</span> encoder_decoder_forward</li>
+          <li class=""><span>53.</span> 源端与目标端嵌入</li>
+          <li class=""><span>54.</span> tie_target_embedding</li>
+          <li class=""><span>55.</span> xavier_initialize</li>
+          <li class=""><span>56.</span> 构造完整 Transformer</li>
+          <li class=""><span>57.</span> __init__</li>
+          <li class=""><span>58.</span> 标签平滑分布</li>
+          <li class=""><span>59.</span> loss_ignoring_pad</li>
+          <li class=""><span>60.</span> __init__</li>
+          <li class=""><span>61.</span> Noam 学习率公式</li>
+          <li class=""><span>62.</span> make_optimizer</li>
+          <li class=""><span>63.</span> optimizer_hyperparameters</li>
+          <li class=""><span>64.</span> transformer_training_loss</li>
+          <li class=""><span>65.</span> backward_step</li>
+          <li class=""><span>66.</span> train_batch</li>
+          <li class=""><span>67.</span> evaluate_batch</li>
+          <li class=""><span>68.</span> checkpoint_roundtrip</li>
+          <li class=""><span>69.</span> greedy_next_token</li>
+          <li class=""><span>70.</span> greedy_decode</li>
+          <li class=""><span>71.</span> greedy_decode_eos</li>
+          <li class=""><span>72.</span> 展开 Beam 分数</li>
+          <li class=""><span>73.</span> 选取 Beam Top-k</li>
+          <li class=""><span>74.</span> 更新 Beam 完成标记</li>
+          <li class=""><span>75.</span> 长度惩罚</li>
+          <li class=""><span>76.</span> beam_decode_step</li>
+          <li class=""><span>77.</span> beam_decode</li>
+          <li class=""><span>78.</span> tiny_model_inference</li>
+          <li class=""><span>79.</span> end_to_end_decode</li></ul></div>
+    <p class="foot"><a href="https://codeky.online">codeky.online</a></p>
+  </div>
+</body>
+</html>
