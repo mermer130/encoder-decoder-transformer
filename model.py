@@ -192,18 +192,16 @@ def shift_targets_right(
     return shifted
 
 # Step 10 - __init__
+import math
+from typing import Optional, Tuple
 import torch
 import torch.nn as nn
-from typing import Optional, Tuple
-
+import torch.nn.functional as F
 
 class ScaledDotProductAttention(nn.Module):
-
     def __init__(self, dropout_p: float = 0.0):
         super().__init__()
-
         self.dropout = nn.Dropout(dropout_p)
-
 
     def forward(
         self,
@@ -212,105 +210,23 @@ class ScaledDotProductAttention(nn.Module):
         v: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-
-        """
-        q/k/v:
-            [B, H, S, D]
-
-        返回:
-            output:
-                [B, H, S, D]
-
-            attn_weights:
-                [B, H, S, S]
-        """
-
-        # D
+        # q/k/v 形状: [B, H, S, D]
         d_k = q.size(-1)
 
+        # 1. 计算点积注意力得分并缩放: (Q @ K^T) / sqrt(d_k)
+        # 结果形状: [B, H, S_q, S_k]
+        scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
 
-        # -----------------------------------
-        # 1. QK^T
-        #
-        # q:
-        # [B,H,S,D]
-        #
-        # k.transpose(-1,-2):
-        # [B,H,D,S]
-        #
-        # result:
-        # [B,H,S,S]
-        # -----------------------------------
-
-        scores = q @ k.transpose(-1, -2)
-
-
-        # -----------------------------------
-        # 2. 缩放
-        #
-        # 防止点积结果过大
-        # -----------------------------------
-
-        scores = scores / (d_k ** 0.5)
-
-
-
-        # -----------------------------------
-        # 3. mask
-        #
-        # mask为False的位置禁止关注
-        #
-        # 例如:
-        # causal mask 防止看到未来token
-        # -----------------------------------
-
+        # 2. 掩码操作 (如果有 mask，将 mask 为 0 或 False 的无效位置填充为 -inf 或 -1e9)
         if mask is not None:
+            scores = scores.masked_fill(mask == 0, float("-inf"))
 
-            scores = scores.masked_fill(
-                mask == 0,
-                float("-inf")
-            )
+        # 3. Softmax 归一化为概率分布
+        attn_weights = F.softmax(scores, dim=-1)
 
-
-
-        # -----------------------------------
-        # 4. softmax
-        #
-        # 在最后一个维度归一化
-        #
-        # [B,H,S,S]
-        #
-        # 每一行表示:
-        # 一个token关注所有token的概率
-        # -----------------------------------
-
-        attn_weights = torch.softmax(
-            scores,
-            dim=-1
-        )
-
-
-        # dropout
-        attn_weights = self.dropout(attn_weights)
-
-
-
-        # -----------------------------------
-        # 5. Attention * V
-        #
-        # attn_weights:
-        # [B,H,S,S]
-        #
-        # v:
-        # [B,H,S,D]
-        #
-        # output:
-        # [B,H,S,D]
-        # -----------------------------------
-
-        output = attn_weights @ v
-
-
+        # 4. 对注意力权重应用 Dropout 并与 V 相乘加权求和
+        # output 形状: [B, H, S, D]
+        output = torch.matmul(self.dropout(attn_weights), v)
 
         return output, attn_weights
 
@@ -416,16 +332,28 @@ class MultiHeadAttention(nn.Module):
         y = self.W_o(ctx.to(dtype=x.dtype))
         return y.detach().to(device=orig_device, dtype=orig_dtype)
 
-# Step 12 - __init__ (not yet solved)
-# TODO: implement
+# Step 12 - __init__
+import torch
+import torch.nn as nn
 
-# Step 13 - residual_dropout (not yet solved)
-# TODO: implement
+class LayerNorm(nn.Module):
+    def __init__(self, model_dim: int, eps: float = 1e-5) -> None:
+        super().__init__()
+        self.eps = eps
+        # gamma初始化为1，beta初始化为0，shape [model_dim]
+        self.gamma = nn.Parameter(torch.ones(model_dim))
+        self.beta = nn.Parameter(torch.zeros(model_dim))
 
-# Step 14 - __init__ (not yet solved)
-# TODO: implement
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: [batch_size, seq_len, model_dim]，在最后一维model_dim做归一化
+        mean = x.mean(dim=-1, keepdim=True)
+        # 总体方差 unbiased=False，除以N
+        var = x.var(dim=-1, keepdim=True, unbiased=False)
+        normalized = (x - mean) / torch.sqrt(var + self.eps)
+        out = normalized * self.gamma + self.beta
+        return out
 
-# Step 15 - __init__
+# Step 13 - __init__
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -441,6 +369,12 @@ class FFN(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # 先升维映射 -> ReLU 激活截断负数 -> 降维映射回原维度
         return self.w_down(F.relu(self.w_up(x)))
+
+# Step 14 - residual_dropout (not yet solved)
+# TODO: implement
+
+# Step 15 - __init__ (not yet solved)
+# TODO: implement
 
 # Step 16 - encoder_layer_forward (not yet solved)
 # TODO: implement
