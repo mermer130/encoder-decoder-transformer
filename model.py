@@ -122,41 +122,47 @@ def sinusoidal_encoding(max_len: int, d_model: int, device=None) -> torch.Tensor
 
     return pe
 
-# Step 5 - __init__
+# Step 5 - sinusoidal_encoding
 import math
 import torch
 import torch.nn as nn
+
+def sinusoidal_encoding(max_len: int, d_model: int, device=None) -> torch.Tensor:
+    # 1. 初始化 (max_len, d_model) 的 float32 全零张量
+    pe = torch.zeros(max_len, d_model, dtype=torch.float32, device=device)
+    
+    if max_len == 0:
+        return pe
+
+    # 2. 位置列向量: 形状为 (max_len, 1)，包含 [0, 1, ..., max_len - 1]
+    position = torch.arange(0, max_len, dtype=torch.float32, device=device).unsqueeze(1)
+
+    # 3. 频率项 (利用对数指数转化避免数值溢出): 形状为 (d_model / 2,)
+    # 对应公式 10000^(-2i / d_model) = exp(-2i / d_model * ln(10000))
+    div_term = torch.exp(
+        torch.arange(0, d_model, 2, dtype=torch.float32, device=device) * -(math.log(10000.0) / d_model)
+    )
+
+    # 4. 相位矩阵广播计算: (max_len, 1) * (d_model / 2,) -> (max_len, d_model / 2)
+    phase = position * div_term
+
+    # 5. 偶数列填正弦，奇数列填余弦
+    pe[:, 0::2] = torch.sin(phase)
+    pe[:, 1::2] = torch.cos(phase)
+
+    return pe
 
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
         super().__init__()
         self.dropout = nn.Dropout(dropout)
-        
-        # 1. 初始化 (max_len, d_model) 的位置编码矩阵
-        pe = torch.zeros(max_len, d_model)
-        
-        # 2. 生成位置索引 pos: [0, 1, 2, ..., max_len - 1]，形状 (max_len, 1)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        
-        # 3. 计算衰减项 div_term = 10000^(-2i / d_model)
-        # 用 exp(log(...)) 提高数值计算稳定性
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
-        
-        # 4. 偶数维度填 sin，奇数维度填 cos
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        
-        # 5. 扩充 batch 维度为 (1, max_len, d_model)
-        pe = pe.unsqueeze(0)
-        
-        # 6. 注册为 buffer：随模型自动切换 CPU/GPU，但不会被当作待学习参数更新梯度
+        pe = sinusoidal_encoding(max_len, d_model)
+        if pe.dim() == 2:
+            pe = pe.unsqueeze(0)
         self.register_buffer('pe', pe)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x 形状: (B, L, d_model)
-        # 截取前 L 个位置编码，利用广播机制自动与 B 个样本逐元素相加
-        x = x + self.pe[:, :x.size(1)]
-        # 应用 Dropout 并返回
+        x = x + self.pe[:, :x.size(1)].to(dtype=x.dtype)
         return self.dropout(x)
 
 # Step 6 - make_src_mask
@@ -371,74 +377,68 @@ class FFN(nn.Module):
 # Step 19 - __init__ (not yet solved)
 # TODO: implement
 
-# Step 20 - tie_target_embedding (not yet solved)
+# Step 20 - label_smoothing_distribution (not yet solved)
 # TODO: implement
 
-# Step 21 - __init__ (not yet solved)
+# Step 21 - loss_ignoring_pad (not yet solved)
 # TODO: implement
 
-# Step 22 - label_smoothing_distribution (not yet solved)
+# Step 22 - __init__ (not yet solved)
 # TODO: implement
 
-# Step 23 - loss_ignoring_pad (not yet solved)
+# Step 23 - noam_learning_rate (not yet solved)
 # TODO: implement
 
-# Step 24 - __init__ (not yet solved)
+# Step 24 - make_optimizer (not yet solved)
 # TODO: implement
 
-# Step 25 - noam_learning_rate (not yet solved)
+# Step 25 - optimizer_hyperparameters (not yet solved)
 # TODO: implement
 
-# Step 26 - make_optimizer (not yet solved)
+# Step 26 - transformer_training_loss (not yet solved)
 # TODO: implement
 
-# Step 27 - optimizer_hyperparameters (not yet solved)
+# Step 27 - backward_step (not yet solved)
 # TODO: implement
 
-# Step 28 - transformer_training_loss (not yet solved)
+# Step 28 - train_batch (not yet solved)
 # TODO: implement
 
-# Step 29 - backward_step (not yet solved)
+# Step 29 - evaluate_batch (not yet solved)
 # TODO: implement
 
-# Step 30 - train_batch (not yet solved)
+# Step 30 - checkpoint_roundtrip (not yet solved)
 # TODO: implement
 
-# Step 31 - evaluate_batch (not yet solved)
+# Step 31 - greedy_next_token (not yet solved)
 # TODO: implement
 
-# Step 32 - checkpoint_roundtrip (not yet solved)
+# Step 32 - greedy_decode (not yet solved)
 # TODO: implement
 
-# Step 33 - greedy_next_token (not yet solved)
+# Step 33 - greedy_decode_eos (not yet solved)
 # TODO: implement
 
-# Step 34 - greedy_decode (not yet solved)
+# Step 34 - beam_expand_scores (not yet solved)
 # TODO: implement
 
-# Step 35 - greedy_decode_eos (not yet solved)
+# Step 35 - beam_topk (not yet solved)
 # TODO: implement
 
-# Step 36 - beam_expand_scores (not yet solved)
+# Step 36 - update_finished_beams (not yet solved)
 # TODO: implement
 
-# Step 37 - beam_topk (not yet solved)
+# Step 37 - length_penalty (not yet solved)
 # TODO: implement
 
-# Step 38 - update_finished_beams (not yet solved)
+# Step 38 - beam_decode_step (not yet solved)
 # TODO: implement
 
-# Step 39 - length_penalty (not yet solved)
+# Step 39 - beam_decode (not yet solved)
 # TODO: implement
 
-# Step 40 - beam_decode_step (not yet solved)
+# Step 40 - tiny_model_inference (not yet solved)
 # TODO: implement
 
-# Step 41 - beam_decode (not yet solved)
-# TODO: implement
-
-# Step 42 - tiny_model_inference (not yet solved)
-# TODO: implement
-
-# Step 43 - end_to_end_decode (not yet solved)
+# Step 41 - end_to_end_decode (not yet solved)
 # TODO: implement
