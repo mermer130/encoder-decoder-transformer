@@ -1,4 +1,4 @@
-"""Encoder-Decoder Transformer scaffold.
+"""从0到1实现Transformer架构 scaffold.
 
 Run this with: python scaffold.py
 Uses functions defined in model.py.
