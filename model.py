@@ -98,15 +98,28 @@ import math
 import torch
 
 def sinusoidal_encoding(max_len: int, d_model: int, device=None) -> torch.Tensor:
-    # pos: [max_len, 1]
-    pos = torch.arange(0, max_len, dtype=torch.float32, device=device).unsqueeze(1)
-    # 取 i 为 0,1,...,d_model//2 -1
-    i = torch.arange(0, d_model // 2, dtype=torch.float32, device=device)
-    omega = torch.pow(10000.0, (-2 * i) / d_model)
+    # 1. 初始化 (max_len, d_model) 的 float32 全零张量
+    pe = torch.zeros(max_len, d_model, dtype=torch.float32, device=device)
+    
+    if max_len == 0:
+        return pe
 
-    pe = torch.zeros((max_len, d_model), dtype=torch.float32, device=device)
-    pe[:, 0::2] = torch.sin(pos * omega)
-    pe[:, 1::2] = torch.cos(pos * omega)
+    # 2. 位置列向量: 形状为 (max_len, 1)，包含 [0, 1, ..., max_len - 1]
+    position = torch.arange(0, max_len, dtype=torch.float32, device=device).unsqueeze(1)
+
+    # 3. 频率项 (利用对数指数转化避免数值溢出): 形状为 (d_model / 2,)
+    # 对应公式 10000^(-2i / d_model) = exp(-2i / d_model * ln(10000))
+    div_term = torch.exp(
+        torch.arange(0, d_model, 2, dtype=torch.float32, device=device) * -(math.log(10000.0) / d_model)
+    )
+
+    # 4. 相位矩阵广播计算: (max_len, 1) * (d_model / 2,) -> (max_len, d_model / 2)
+    phase = position * div_term
+
+    # 5. 偶数列填正弦，奇数列填余弦
+    pe[:, 0::2] = torch.sin(phase)
+    pe[:, 1::2] = torch.cos(phase)
+
     return pe
 
 # Step 5 - __init__
