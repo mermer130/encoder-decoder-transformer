@@ -230,107 +230,77 @@ class ScaledDotProductAttention(nn.Module):
 
         return output, attn_weights
 
-# Step 11 - mha_attn_kernel
+# Step 11 - __init__
+import math
+from typing import Optional, Tuple
 import torch
 import torch.nn as nn
-import math
-import triton
-import triton.language as tl
-from typing import Optional
+import torch.nn.functional as F
+
+# 基础零件: 缩放点积注意力
+class ScaledDotProductAttention(nn.Module):
+    def __init__(self, dropout_p: float = 0.0):
+        super().__init__()
+        self.dropout = nn.Dropout(dropout_p)
+
+    def forward(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        d_k = q.size(-1)
+        scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
+        if mask is not None:
+            scores = scores.masked_fill(mask == 0, float("-inf"))
+        attn_weights = F.softmax(scores, dim=-1)
+        output = torch.matmul(self.dropout(attn_weights), v)
+        return output, attn_weights
 
 
-@triton.jit
-def mha_attn_kernel(
-    q_ptr, k_ptr, v_ptr, out_ptr,
-    B, S, H, d_k,
-    stride_qb, stride_qs, stride_qd,
-    stride_kb, stride_ks, stride_kd,
-    stride_vb, stride_vs, stride_vd,
-    stride_ob, stride_os, stride_od,
-    scale,
-    BLOCK_S: tl.constexpr,
-    BLOCK_D: tl.constexpr,
-):
-    pid = tl.program_id(0)
-    b = pid // (H * S)
-    rest = pid % (H * S)
-    h = rest // S
-    i = rest % S
-    offs_s = tl.arange(0, BLOCK_S)
-    offs_d = tl.arange(0, BLOCK_D)
-    mask_s = offs_s < S
-    mask_d = offs_d < d_k
-    head_off = h * d_k
-
-    q = tl.load(
-        q_ptr + b * stride_qb + i * stride_qs + (head_off + offs_d) * stride_qd,
-        mask=mask_d,
-        other=0.0,
-    ).to(tl.float32)
-    k = tl.load(
-        k_ptr + b * stride_kb + offs_s[:, None] * stride_ks + (head_off + offs_d[None, :]) * stride_kd,
-        mask=mask_s[:, None] & mask_d[None, :],
-        other=0.0,
-    ).to(tl.float32)
-    scores = tl.sum(k * q[None, :], axis=1) * scale
-    scores = tl.where(mask_s, scores, -float('inf'))
-    mval = tl.max(scores, axis=0)
-    p = tl.exp(scores - mval)
-    p = tl.where(mask_s, p, 0.0)
-    den = tl.sum(p, axis=0)
-    p = tl.where(den > 0, p / den, 0.0)
-    v = tl.load(
-        v_ptr + b * stride_vb + offs_s[:, None] * stride_vs + (head_off + offs_d[None, :]) * stride_vd,
-        mask=mask_s[:, None] & mask_d[None, :],
-        other=0.0,
-    ).to(tl.float32)
-    out = tl.sum(v * p[:, None], axis=0)
-    tl.store(
-        out_ptr + b * stride_ob + i * stride_os + (head_off + offs_d) * stride_od,
-        out,
-        mask=mask_d,
-    )
-
-
+# 完整模块: 多头注意力
 class MultiHeadAttention(nn.Module):
     def __init__(self, embed_dim: int, num_heads: int):
         super(MultiHeadAttention, self).__init__()
-        assert embed_dim % num_heads == 0
+        assert embed_dim % num_heads == 0, "embed_dim 必须能被 num_heads 整除"
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.head_dim = embed_dim // num_heads
+
+        # 1. 按照注释要求定义 4 个线性投影矩阵 W_q, W_k, W_v, W_o
         self.W_q = nn.Linear(embed_dim, embed_dim)
         self.W_k = nn.Linear(embed_dim, embed_dim)
         self.W_v = nn.Linear(embed_dim, embed_dim)
         self.W_o = nn.Linear(embed_dim, embed_dim)
 
+        # 兼容小写命名的测试用例
+        self.w_q = self.W_q
+        self.w_k = self.W_k
+        self.w_v = self.W_v
+        self.w_o = self.W_o
+
+        # 2. 引入上方的缩放点积注意力积木
+        self.attention = ScaledDotProductAttention()
+
     def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
-        orig_device = x.device
-        orig_dtype = x.dtype
-        x = x.contiguous()
-        if torch.cuda.is_available() and (not x.is_cuda):
-            x = x.cuda()
-        self.to(x.device)
-        q = self.W_q(x).contiguous()
-        k = self.W_k(x).contiguous()
-        v = self.W_v(x).contiguous()
-        B, S, D = x.shape
-        H = self.num_heads
-        d_k = self.head_dim
-        ctx = torch.empty((B, S, D), device=x.device, dtype=torch.float32)
-        mha_attn_kernel[(B * H * S,)](
-            q, k, v, ctx,
-            B, S, H, d_k,
-            q.stride(0), q.stride(1), q.stride(2),
-            k.stride(0), k.stride(1), k.stride(2),
-            v.stride(0), v.stride(1), v.stride(2),
-            ctx.stride(0), ctx.stride(1), ctx.stride(2),
-            1.0 / math.sqrt(d_k),
-            BLOCK_S=triton.next_power_of_2(S),
-            BLOCK_D=triton.next_power_of_2(d_k),
-        )
-        y = self.W_o(ctx.to(dtype=x.dtype))
-        return y.detach().to(device=orig_device, dtype=orig_dtype)
+        # x 形状: [B, S, embed_dim]
+        B, S, _ = x.shape
+
+        # 1. 线性投影并切分成多头: [B, S, embed_dim] -> [B, S, H, D] -> [B, H, S, D]
+        q = self.W_q(x).view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
+        k = self.W_k(x).view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
+        v = self.W_v(x).view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
+
+        # 2. 调用缩放点积注意力计算
+        # out 形状: [B, H, S, head_dim]
+        out, _ = self.attention(q, k, v, mask=mask)
+
+        # 3. 拼合多头: [B, H, S, head_dim] -> [B, S, H, head_dim] -> [B, S, embed_dim]
+        out = out.transpose(1, 2).contiguous().view(B, S, self.embed_dim)
+
+        # 4. 经过输出层 W_o 融合多头特征
+        return self.W_o(out)
 
 # Step 12 - __init__
 import torch
@@ -370,98 +340,92 @@ class FFN(nn.Module):
         # 先升维映射 -> ReLU 激活截断负数 -> 降维映射回原维度
         return self.w_down(F.relu(self.w_up(x)))
 
-# Step 14 - residual_dropout (not yet solved)
+# Step 14 - encoder_layer_forward (not yet solved)
 # TODO: implement
 
 # Step 15 - __init__ (not yet solved)
 # TODO: implement
 
-# Step 16 - encoder_layer_forward (not yet solved)
+# Step 16 - decoder_layer_forward (not yet solved)
 # TODO: implement
 
 # Step 17 - __init__ (not yet solved)
 # TODO: implement
 
-# Step 18 - decoder_layer_forward (not yet solved)
+# Step 18 - __init__ (not yet solved)
 # TODO: implement
 
 # Step 19 - __init__ (not yet solved)
 # TODO: implement
 
-# Step 20 - __init__ (not yet solved)
+# Step 20 - tie_target_embedding (not yet solved)
 # TODO: implement
 
 # Step 21 - __init__ (not yet solved)
 # TODO: implement
 
-# Step 22 - tie_target_embedding (not yet solved)
+# Step 22 - label_smoothing_distribution (not yet solved)
 # TODO: implement
 
-# Step 23 - __init__ (not yet solved)
+# Step 23 - loss_ignoring_pad (not yet solved)
 # TODO: implement
 
-# Step 24 - label_smoothing_distribution (not yet solved)
+# Step 24 - __init__ (not yet solved)
 # TODO: implement
 
-# Step 25 - loss_ignoring_pad (not yet solved)
+# Step 25 - noam_learning_rate (not yet solved)
 # TODO: implement
 
-# Step 26 - __init__ (not yet solved)
+# Step 26 - make_optimizer (not yet solved)
 # TODO: implement
 
-# Step 27 - noam_learning_rate (not yet solved)
+# Step 27 - optimizer_hyperparameters (not yet solved)
 # TODO: implement
 
-# Step 28 - make_optimizer (not yet solved)
+# Step 28 - transformer_training_loss (not yet solved)
 # TODO: implement
 
-# Step 29 - optimizer_hyperparameters (not yet solved)
+# Step 29 - backward_step (not yet solved)
 # TODO: implement
 
-# Step 30 - transformer_training_loss (not yet solved)
+# Step 30 - train_batch (not yet solved)
 # TODO: implement
 
-# Step 31 - backward_step (not yet solved)
+# Step 31 - evaluate_batch (not yet solved)
 # TODO: implement
 
-# Step 32 - train_batch (not yet solved)
+# Step 32 - checkpoint_roundtrip (not yet solved)
 # TODO: implement
 
-# Step 33 - evaluate_batch (not yet solved)
+# Step 33 - greedy_next_token (not yet solved)
 # TODO: implement
 
-# Step 34 - checkpoint_roundtrip (not yet solved)
+# Step 34 - greedy_decode (not yet solved)
 # TODO: implement
 
-# Step 35 - greedy_next_token (not yet solved)
+# Step 35 - greedy_decode_eos (not yet solved)
 # TODO: implement
 
-# Step 36 - greedy_decode (not yet solved)
+# Step 36 - beam_expand_scores (not yet solved)
 # TODO: implement
 
-# Step 37 - greedy_decode_eos (not yet solved)
+# Step 37 - beam_topk (not yet solved)
 # TODO: implement
 
-# Step 38 - beam_expand_scores (not yet solved)
+# Step 38 - update_finished_beams (not yet solved)
 # TODO: implement
 
-# Step 39 - beam_topk (not yet solved)
+# Step 39 - length_penalty (not yet solved)
 # TODO: implement
 
-# Step 40 - update_finished_beams (not yet solved)
+# Step 40 - beam_decode_step (not yet solved)
 # TODO: implement
 
-# Step 41 - length_penalty (not yet solved)
+# Step 41 - beam_decode (not yet solved)
 # TODO: implement
 
-# Step 42 - beam_decode_step (not yet solved)
+# Step 42 - tiny_model_inference (not yet solved)
 # TODO: implement
 
-# Step 43 - beam_decode (not yet solved)
-# TODO: implement
-
-# Step 44 - tiny_model_inference (not yet solved)
-# TODO: implement
-
-# Step 45 - end_to_end_decode (not yet solved)
+# Step 43 - end_to_end_decode (not yet solved)
 # TODO: implement
