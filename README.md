@@ -14,7 +14,7 @@ python scaffold.py
 - [x] **2.** build_token_id_matrix
 - [x] **3.** __init__
 - [x] **4.** sinusoidal_encoding
-- [x] **5.** __init__
+- [x] **5.** sinusoidal_encoding
 - [x] **6.** make_src_mask
 - [x] **7.** subsequent_mask
 - [ ] **8.** make_tgt_mask
@@ -29,27 +29,25 @@ python scaffold.py
 - [ ] **17.** __init__
 - [ ] **18.** __init__
 - [ ] **19.** __init__
-- [ ] **20.** tie_target_embedding
-- [ ] **21.** __init__
-- [ ] **22.** label_smoothing_distribution
-- [ ] **23.** loss_ignoring_pad
-- [ ] **24.** __init__
-- [ ] **25.** noam_learning_rate
-- [ ] **26.** make_optimizer
-- [ ] **27.** optimizer_hyperparameters
-- [ ] **28.** transformer_training_loss
-- [ ] **29.** backward_step
-- [ ] **30.** train_batch
-- [ ] **31.** evaluate_batch
-- [ ] **32.** checkpoint_roundtrip
-- [ ] **33.** greedy_next_token
-- [ ] **34.** greedy_decode
-- [ ] **35.** greedy_decode_eos
-- [ ] **36.** beam_expand_scores
-- [ ] **37.** beam_topk
-- [ ] **38.** update_finished_beams
-- [ ] **39.** length_penalty
-- [ ] **40.** beam_decode_step
-- [ ] **41.** beam_decode
-- [ ] **42.** tiny_model_inference
-- [ ] **43.** end_to_end_decode
+- [ ] **20.** label_smoothing_distribution
+- [ ] **21.** loss_ignoring_pad
+- [ ] **22.** __init__
+- [ ] **23.** noam_learning_rate
+- [ ] **24.** make_optimizer
+- [ ] **25.** optimizer_hyperparameters
+- [ ] **26.** transformer_training_loss
+- [ ] **27.** backward_step
+- [ ] **28.** train_batch
+- [ ] **29.** evaluate_batch
+- [ ] **30.** checkpoint_roundtrip
+- [ ] **31.** greedy_next_token
+- [ ] **32.** greedy_decode
+- [ ] **33.** greedy_decode_eos
+- [ ] **34.** beam_expand_scores
+- [ ] **35.** beam_topk
+- [ ] **36.** update_finished_beams
+- [ ] **37.** length_penalty
+- [ ] **38.** beam_decode_step
+- [ ] **39.** beam_decode
+- [ ] **40.** tiny_model_inference
+- [ ] **41.** end_to_end_decode
