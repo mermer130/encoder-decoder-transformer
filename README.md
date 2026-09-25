@@ -20,38 +20,36 @@ python scaffold.py
 - [ ] **8.** make_tgt_mask
 - [x] **9.** shift_targets_right
 - [x] **10.** __init__
-- [x] **11.** mha_attn_kernel
+- [x] **11.** __init__
 - [x] **12.** __init__
 - [x] **13.** __init__
-- [ ] **14.** residual_dropout
+- [ ] **14.** encoder_layer_forward
 - [ ] **15.** __init__
-- [ ] **16.** encoder_layer_forward
+- [ ] **16.** decoder_layer_forward
 - [ ] **17.** __init__
-- [ ] **18.** decoder_layer_forward
+- [ ] **18.** __init__
 - [ ] **19.** __init__
-- [ ] **20.** __init__
+- [ ] **20.** tie_target_embedding
 - [ ] **21.** __init__
-- [ ] **22.** tie_target_embedding
-- [ ] **23.** __init__
-- [ ] **24.** label_smoothing_distribution
-- [ ] **25.** loss_ignoring_pad
-- [ ] **26.** __init__
-- [ ] **27.** noam_learning_rate
-- [ ] **28.** make_optimizer
-- [ ] **29.** optimizer_hyperparameters
-- [ ] **30.** transformer_training_loss
-- [ ] **31.** backward_step
-- [ ] **32.** train_batch
-- [ ] **33.** evaluate_batch
-- [ ] **34.** checkpoint_roundtrip
-- [ ] **35.** greedy_next_token
-- [ ] **36.** greedy_decode
-- [ ] **37.** greedy_decode_eos
-- [ ] **38.** beam_expand_scores
-- [ ] **39.** beam_topk
-- [ ] **40.** update_finished_beams
-- [ ] **41.** length_penalty
-- [ ] **42.** beam_decode_step
-- [ ] **43.** beam_decode
-- [ ] **44.** tiny_model_inference
-- [ ] **45.** end_to_end_decode
+- [ ] **22.** label_smoothing_distribution
+- [ ] **23.** loss_ignoring_pad
+- [ ] **24.** __init__
+- [ ] **25.** noam_learning_rate
+- [ ] **26.** make_optimizer
+- [ ] **27.** optimizer_hyperparameters
+- [ ] **28.** transformer_training_loss
+- [ ] **29.** backward_step
+- [ ] **30.** train_batch
+- [ ] **31.** evaluate_batch
+- [ ] **32.** checkpoint_roundtrip
+- [ ] **33.** greedy_next_token
+- [ ] **34.** greedy_decode
+- [ ] **35.** greedy_decode_eos
+- [ ] **36.** beam_expand_scores
+- [ ] **37.** beam_topk
+- [ ] **38.** update_finished_beams
+- [ ] **39.** length_penalty
+- [ ] **40.** beam_decode_step
+- [ ] **41.** beam_decode
+- [ ] **42.** tiny_model_inference
+- [ ] **43.** end_to_end_decode
