@@ -18,7 +18,7 @@ python scaffold.py
 - [x] **6.** make_src_mask
 - [x] **7.** subsequent_mask
 - [ ] **8.** make_tgt_mask
-- [ ] **9.** shift_targets_right
+- [x] **9.** shift_targets_right
 - [x] **10.** __init__
 - [x] **11.** mha_attn_kernel
 - [ ] **12.** __init__
