@@ -172,8 +172,24 @@ def subsequent_mask(
 # Step 8 - make_tgt_mask (not yet solved)
 # TODO: implement
 
-# Step 9 - shift_targets_right (not yet solved)
-# TODO: implement
+# Step 9 - shift_targets_right
+import torch
+
+def shift_targets_right(
+    target_ids: torch.Tensor,
+    bos_id: int,
+) -> torch.Tensor:
+    # 1. 创建同形状、同设备、同 dtype 的新张量，确保独立于原输入
+    shifted = torch.empty_like(target_ids)
+    
+    # 2. 第 0 列全部填充起始标记 bos_id
+    shifted[:, 0] = bos_id
+    
+    # 3. 当序列长度 L > 1 时，将原序列除最后一列外的切片 [:, :-1] 复制到右侧 [:, 1:]
+    if target_ids.size(1) > 1:
+        shifted[:, 1:] = target_ids[:, :-1]
+        
+    return shifted
 
 # Step 10 - __init__
 import torch
