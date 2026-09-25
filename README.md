@@ -21,10 +21,10 @@ python scaffold.py
 - [x] **9.** shift_targets_right
 - [x] **10.** __init__
 - [x] **11.** mha_attn_kernel
-- [ ] **12.** __init__
-- [ ] **13.** residual_dropout
-- [ ] **14.** __init__
-- [x] **15.** __init__
+- [x] **12.** __init__
+- [x] **13.** __init__
+- [ ] **14.** residual_dropout
+- [ ] **15.** __init__
 - [ ] **16.** encoder_layer_forward
 - [ ] **17.** __init__
 - [ ] **18.** decoder_layer_forward
