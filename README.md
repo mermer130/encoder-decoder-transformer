@@ -1,6 +1,6 @@
-# Encoder-Decoder Transformer
+# 从0到1实现Transformer架构
 
-按 Encoder-Decoder 结构手写完整模型：词嵌入、正弦位置编码、多头注意力、Post-Norm、真实 Adam 与解码。每一步对应一个 nn.Module 或训练/推理接口。
+手把手教你实现Transformer的完整架构
 
 ## How to run
 
@@ -10,82 +10,48 @@ python scaffold.py
 
 ## Steps
 
-- [x] **1.** __init__
-- [ ] **2.** 正弦位置编码矩阵
-- [ ] **3.** __init__
-- [ ] **4.** 源端 Padding 掩码
-- [ ] **5.** 因果下三角掩码
-- [ ] **6.** 目标端 Padding 与因果掩码
-- [ ] **7.** 目标序列右移
-- [ ] **8.** 缩放注意力分数
-- [ ] **9.** 注意力掩码填负无穷
-- [ ] **10.** 注意力 Softmax
-- [ ] **11.** 注意力权重 Dropout
-- [ ] **12.** 权重乘 Value
-- [ ] **13.** 缩放点积注意力
-- [ ] **14.** 最后一维拆成多头
-- [ ] **15.** 多头合并回模型维
-- [ ] **16.** __init__
-- [ ] **17.** self_attention_forward
-- [ ] **18.** cross_attention_forward
+- [x] **1.** bpe_tokenize
+- [x] **2.** build_token_id_matrix
+- [x] **3.** __init__
+- [x] **4.** sinusoidal_encoding
+- [x] **5.** __init__
+- [x] **6.** make_src_mask
+- [x] **7.** subsequent_mask
+- [ ] **8.** make_tgt_mask
+- [ ] **9.** shift_targets_right
+- [x] **10.** __init__
+- [x] **11.** mha_attn_kernel
+- [ ] **12.** __init__
+- [ ] **13.** residual_dropout
+- [ ] **14.** __init__
+- [x] **15.** __init__
+- [ ] **16.** encoder_layer_forward
+- [ ] **17.** __init__
+- [ ] **18.** decoder_layer_forward
 - [ ] **19.** __init__
-- [ ] **20.** 残差分支 Dropout
+- [ ] **20.** __init__
 - [ ] **21.** __init__
-- [ ] **22.** FFN 第一层 ReLU
+- [ ] **22.** tie_target_embedding
 - [ ] **23.** __init__
-- [ ] **24.** feed_forward_hidden
-- [ ] **25.** feed_forward_forward
-- [ ] **26.** 构造编码器注意力
-- [ ] **27.** 构造编码器前馈
-- [ ] **28.** __init__
-- [ ] **29.** encoder_layer_forward
-- [ ] **30.** clone_encoder_layer
-- [ ] **31.** __init__
-- [ ] **32.** encoder_forward
-- [ ] **33.** encoder_state_dict
-- [ ] **34.** 构造 N 层编码器
-- [ ] **35.** 解码器自注意力掩码
-- [ ] **36.** decoder_self_attention
-- [ ] **37.** decoder_cross_attention
-- [ ] **38.** decoder_feed_forward
-- [ ] **39.** __init__
-- [ ] **40.** decoder_layer_forward
-- [ ] **41.** clone_decoder_layer
-- [ ] **42.** __init__
-- [ ] **43.** decoder_forward
-- [ ] **44.** decoder_state_dict
-- [ ] **45.** 构造 N 层解码器
-- [ ] **46.** decoder_output_shape
-- [ ] **47.** __init__
-- [ ] **48.** generator_forward
-- [ ] **49.** __init__
-- [ ] **50.** encode_source
-- [ ] **51.** decode_target
-- [ ] **52.** encoder_decoder_forward
-- [ ] **53.** 源端与目标端嵌入
-- [ ] **54.** tie_target_embedding
-- [ ] **55.** xavier_initialize
-- [ ] **56.** 构造完整 Transformer
-- [ ] **57.** __init__
-- [ ] **58.** 标签平滑分布
-- [ ] **59.** loss_ignoring_pad
-- [ ] **60.** __init__
-- [ ] **61.** Noam 学习率公式
-- [ ] **62.** make_optimizer
-- [ ] **63.** optimizer_hyperparameters
-- [ ] **64.** transformer_training_loss
-- [ ] **65.** backward_step
-- [ ] **66.** train_batch
-- [ ] **67.** evaluate_batch
-- [ ] **68.** checkpoint_roundtrip
-- [ ] **69.** greedy_next_token
-- [ ] **70.** greedy_decode
-- [ ] **71.** greedy_decode_eos
-- [ ] **72.** 展开 Beam 分数
-- [ ] **73.** 选取 Beam Top-k
-- [ ] **74.** 更新 Beam 完成标记
-- [ ] **75.** 长度惩罚
-- [ ] **76.** beam_decode_step
-- [ ] **77.** beam_decode
-- [ ] **78.** tiny_model_inference
-- [ ] **79.** end_to_end_decode
+- [ ] **24.** label_smoothing_distribution
+- [ ] **25.** loss_ignoring_pad
+- [ ] **26.** __init__
+- [ ] **27.** noam_learning_rate
+- [ ] **28.** make_optimizer
+- [ ] **29.** optimizer_hyperparameters
+- [ ] **30.** transformer_training_loss
+- [ ] **31.** backward_step
+- [ ] **32.** train_batch
+- [ ] **33.** evaluate_batch
+- [ ] **34.** checkpoint_roundtrip
+- [ ] **35.** greedy_next_token
+- [ ] **36.** greedy_decode
+- [ ] **37.** greedy_decode_eos
+- [ ] **38.** beam_expand_scores
+- [ ] **39.** beam_topk
+- [ ] **40.** update_finished_beams
+- [ ] **41.** length_penalty
+- [ ] **42.** beam_decode_step
+- [ ] **43.** beam_decode
+- [ ] **44.** tiny_model_inference
+- [ ] **45.** end_to_end_decode
