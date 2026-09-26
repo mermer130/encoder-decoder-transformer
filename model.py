@@ -8,46 +8,40 @@ Assembled from your step-by-step solutions.
 from typing import List, Tuple
 
 def bpe_tokenize(text: str, merges: List[Tuple[str, str]]) -> List[str]:
-    # 建立合并规则 -> 优先级的映射，越靠前优先级越小
-    merge_rank = {}
-    for idx, (a, b) in enumerate(merges):
-        merge_rank[(a, b)] = idx
-    
-    # 按空格切分出单词
-    words = text.split()
-    result = []
-    
-    for word in words:
-        # 单词拆成单个字符，末尾加上 </w>
-        tokens = list(word) + ['</w>']
-        
+    result: List[str] = []
+
+    for word in text.split(' '):
+        tokens = list(word) + ['</w>']  # 拆成单字符，末尾加词尾符
+
         while True:
-            # 找出当前所有相邻token对，筛选存在于merge_rank中的
-            pairs = []
-            for i in range(len(tokens) - 1):
-                pair = (tokens[i], tokens[i+1])
-                if pair in merge_rank:
-                    pairs.append((merge_rank[pair], i, pair))
-            if not pairs:
+            # 1. 按优先级从高到低，找第一条能匹配到相邻 token 对的规则
+            merge_idx = None
+            for rank, (a, b) in enumerate(merges):
+                if any(tokens[i] == a and tokens[i + 1] == b
+                       for i in range(len(tokens) - 1)):
+                    merge_idx = rank
+                    break
+
+            if merge_idx is None:  # 没有规则能用了，结束这个单词
                 break
-            
-            # 选优先级最高（rank最小）的一对
-            pairs.sort()
-            best_rank, best_i, best_pair = pairs[0]
-            
-            # 执行合并，从左到右合并所有匹配best_pair的位置
+
+            a, b = merges[merge_idx]
+
+            # 2. 从左到右扫描，非重叠地合并所有匹配到的相邻位置
             new_tokens = []
             i = 0
             while i < len(tokens):
-                if i < len(tokens)-1 and (tokens[i], tokens[i+1]) == best_pair:
-                    new_tokens.append(tokens[i] + tokens[i+1])
-                    i += 2
+                if i + 1 < len(tokens) and tokens[i] == a and tokens[i + 1] == b:
+                    new_tokens.append(a + b)
+                    i += 2  # 跳过已合并的两个 token，避免重叠
                 else:
                     new_tokens.append(tokens[i])
                     i += 1
             tokens = new_tokens
-        
+            # 3. 回到循环开头，重新从优先级最高的规则开始检查
+
         result.extend(tokens)
+
     return result
 
 # Step 2 - build_token_id_matrix
@@ -188,29 +182,10 @@ def subsequent_mask(
     mask = torch.tril(torch.ones((size, size), dtype=torch.bool, device=device))
     return mask.unsqueeze(0).unsqueeze(0)
 
-# Step 8 - make_tgt_mask (not yet solved)
+# Step 8 - 目标端 Padding 与因果掩码 (not yet solved)
 # TODO: implement
 
-# Step 9 - shift_targets_right
-import torch
-
-def shift_targets_right(
-    target_ids: torch.Tensor,
-    bos_id: int,
-) -> torch.Tensor:
-    # 1. 创建同形状、同设备、同 dtype 的新张量，确保独立于原输入
-    shifted = torch.empty_like(target_ids)
-    
-    # 2. 第 0 列全部填充起始标记 bos_id
-    shifted[:, 0] = bos_id
-    
-    # 3. 当序列长度 L > 1 时，将原序列除最后一列外的切片 [:, :-1] 复制到右侧 [:, 1:]
-    if target_ids.size(1) > 1:
-        shifted[:, 1:] = target_ids[:, :-1]
-        
-    return shifted
-
-# Step 10 - __init__
+# Step 9 - __init__
 import math
 from typing import Optional, Tuple
 import torch
@@ -249,7 +224,7 @@ class ScaledDotProductAttention(nn.Module):
 
         return output, attn_weights
 
-# Step 11 - __init__
+# Step 10 - __init__
 import math
 from typing import Optional, Tuple
 import torch
@@ -321,7 +296,7 @@ class MultiHeadAttention(nn.Module):
         # 4. 经过输出层 W_o 融合多头特征
         return self.W_o(out)
 
-# Step 12 - __init__
+# Step 11 - __init__
 import torch
 import torch.nn as nn
 
@@ -342,6 +317,41 @@ class LayerNorm(nn.Module):
         out = normalized * self.gamma + self.beta
         return out
 
+# Step 12 - __init__
+import torch
+import torch.nn as nn
+import math
+
+class CrossAttention(nn.Module):
+    def __init__(self, embed_dim: int):
+        super(CrossAttention, self).__init__()
+        self.embed_dim = embed_dim
+        # bias=True：保留bias对象供测试脚本访问；bias置零等价无偏置
+        self.W_q = nn.Linear(embed_dim, embed_dim, bias=True)
+        self.W_k = nn.Linear(embed_dim, embed_dim, bias=True)
+        self.W_v = nn.Linear(embed_dim, embed_dim, bias=True)
+
+        # 权重初始化为单位矩阵
+        torch.nn.init.eye_(self.W_q.weight)
+        torch.nn.init.eye_(self.W_k.weight)
+        torch.nn.init.eye_(self.W_v.weight)
+
+        # bias全部置0，实现“不含偏置”的数学效果
+        torch.nn.init.zeros_(self.W_q.bias)
+        torch.nn.init.zeros_(self.W_k.bias)
+        torch.nn.init.zeros_(self.W_v.bias)
+
+    def forward(self, x_q: torch.Tensor, x_kv: torch.Tensor) -> torch.Tensor:
+        d = self.embed_dim
+        Q = self.W_q(x_q)
+        K = self.W_k(x_kv)
+        V = self.W_v(x_kv)
+
+        attn_score = Q @ K.transpose(-2, -1) / math.sqrt(d)
+        attn_weight = torch.softmax(attn_score, dim=-1)
+        out = attn_weight @ V
+        return out
+
 # Step 13 - __init__
 import torch
 import torch.nn as nn
@@ -359,8 +369,46 @@ class FFN(nn.Module):
         # 先升维映射 -> ReLU 激活截断负数 -> 降维映射回原维度
         return self.w_down(F.relu(self.w_up(x)))
 
-# Step 14 - encoder_layer_forward (not yet solved)
-# TODO: implement
+# Step 14 - __init__
+import torch
+import torch.nn as nn
+from typing import Optional
+
+class EncoderLayer(nn.Module):
+    def __init__(
+        self,
+        d_model: int,              # 模型维度 (如 512)
+        self_attn: nn.Module,      # 多头自注意力模块 MultiHeadAttention
+        feed_forward: nn.Module,   # 前馈网络 PositionwiseFeedForward
+        dropout: float = 0.1
+    ):
+        super(EncoderLayer, self).__init__()
+        self.d_model = d_model
+        self.self_attn = self_attn
+        self.feed_forward = feed_forward
+
+        # 两个子层各自配备一个 LayerNorm
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        
+        # 残差分支的 Dropout
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """
+        x: [batch_size, seq_len, d_model]
+        mask: 掩码矩阵
+        """
+        # 1. 第一个子层：多头自注意力 -> Dropout -> 残差相加 -> LayerNorm
+        # (如果你的 self_attn 签名只接收一个 x，写 self.self_attn(x, mask=mask) 即可)
+        attn_out = self.self_attn(x, mask=mask)
+        x = self.norm1(x + self.dropout(attn_out))
+
+        # 2. 第二个子层：前馈网络 (FFN) -> Dropout -> 残差相加 -> LayerNorm
+        ffn_out = self.feed_forward(x)
+        x = self.norm2(x + self.dropout(ffn_out))
+
+        return x
 
 # Step 15 - __init__ (not yet solved)
 # TODO: implement
@@ -371,74 +419,66 @@ class FFN(nn.Module):
 # Step 17 - __init__ (not yet solved)
 # TODO: implement
 
-# Step 18 - __init__ (not yet solved)
+# Step 18 - __init__
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class Generator(nn.Module):
+    """
+    【第 19 题】词表生成器 (Generator)
+    将 Decoder 产生的隐层表征映射到目标词表大小，并计算对数概率。
+    """
+    def __init__(self, d_model: int, vocab_size: int) -> None:
+        super().__init__()
+        # 1. 注册名为 proj 的线性仿射变换，输入为 d_model，输出为 vocab_size
+        self.proj = nn.Linear(d_model, vocab_size)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        前向传播计算对数概率
+        
+        参数:
+            x: Decoder 输出的隐藏状态张量，形状为 (B, L, d_model)
+               或单步解码时的 (B, d_model)
+               
+        返回:
+            沿词表维进行 log_softmax 归一化后的对数概率张量，形状为 (B, L, vocab_size)
+        """
+        # 2. 经过 proj 线性投影，并沿最后一维 (dim=-1) 计算对数概率
+        return F.log_softmax(self.proj(x), dim=-1)
+
+# Step 19 - shift_targets_right
+import torch
+
+def shift_targets_right(
+    target_ids: torch.Tensor,
+    bos_id: int,
+) -> torch.Tensor:
+    # 1. 创建同形状、同设备、同 dtype 的新张量，确保独立于原输入
+    shifted = torch.empty_like(target_ids)
+    
+    # 2. 第 0 列全部填充起始标记 bos_id
+    shifted[:, 0] = bos_id
+    
+    # 3. 当序列长度 L > 1 时，将原序列除最后一列外的切片 [:, :-1] 复制到右侧 [:, 1:]
+    if target_ids.size(1) > 1:
+        shifted[:, 1:] = target_ids[:, :-1]
+        
+    return shifted
+
+# Step 20 - __init__ (not yet solved)
 # TODO: implement
 
-# Step 19 - __init__ (not yet solved)
+# Step 21 - greedy_decode (not yet solved)
 # TODO: implement
 
-# Step 20 - label_smoothing_distribution (not yet solved)
+# Step 22 - beam_search_decode (not yet solved)
 # TODO: implement
 
-# Step 21 - loss_ignoring_pad (not yet solved)
+# Step 23 - __init__ (not yet solved)
 # TODO: implement
 
-# Step 22 - __init__ (not yet solved)
-# TODO: implement
-
-# Step 23 - noam_learning_rate (not yet solved)
-# TODO: implement
-
-# Step 24 - make_optimizer (not yet solved)
-# TODO: implement
-
-# Step 25 - optimizer_hyperparameters (not yet solved)
-# TODO: implement
-
-# Step 26 - transformer_training_loss (not yet solved)
-# TODO: implement
-
-# Step 27 - backward_step (not yet solved)
-# TODO: implement
-
-# Step 28 - train_batch (not yet solved)
-# TODO: implement
-
-# Step 29 - evaluate_batch (not yet solved)
-# TODO: implement
-
-# Step 30 - checkpoint_roundtrip (not yet solved)
-# TODO: implement
-
-# Step 31 - greedy_next_token (not yet solved)
-# TODO: implement
-
-# Step 32 - greedy_decode (not yet solved)
-# TODO: implement
-
-# Step 33 - greedy_decode_eos (not yet solved)
-# TODO: implement
-
-# Step 34 - beam_expand_scores (not yet solved)
-# TODO: implement
-
-# Step 35 - beam_topk (not yet solved)
-# TODO: implement
-
-# Step 36 - update_finished_beams (not yet solved)
-# TODO: implement
-
-# Step 37 - length_penalty (not yet solved)
-# TODO: implement
-
-# Step 38 - beam_decode_step (not yet solved)
-# TODO: implement
-
-# Step 39 - beam_decode (not yet solved)
-# TODO: implement
-
-# Step 40 - tiny_model_inference (not yet solved)
-# TODO: implement
-
-# Step 41 - end_to_end_decode (not yet solved)
+# Step 24 - subsequent_mask (not yet solved)
 # TODO: implement
