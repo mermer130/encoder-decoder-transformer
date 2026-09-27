@@ -7,7 +7,7 @@ Uses functions defined in model.py.
 from model import *  # noqa: F401, F403
 
 def main():
-    print("loaded subsequent_mask from model.py")
+    print("loaded sinusoidal_encoding from model.py")
 
 if __name__ == "__main__":
     main()
