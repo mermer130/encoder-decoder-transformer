@@ -26,7 +26,7 @@ python scaffold.py
 - [x] **14.** __init__
 - [ ] **15.** __init__
 - [ ] **16.** decoder_layer_forward
-- [ ] **17.** __init__
+- [x] **17.** clones
 - [x] **18.** __init__
 - [x] **19.** shift_targets_right
 - [ ] **20.** __init__
