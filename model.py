@@ -583,8 +583,102 @@ def greedy_decode(
 
     return current_tokens
 
-# Step 22 - beam_search_decode (not yet solved)
-# TODO: implement
+# Step 22 - beam_search_decode
+import torch
+import torch.nn.functional as F
+from typing import Callable, Optional
+
+def beam_search_decode(
+    step_fn: Callable[[torch.Tensor], torch.Tensor],
+    prompt_tokens: torch.Tensor,
+    beam_size: int = 4,
+    max_new_tokens: int = 20,
+    eos_id: Optional[int] = None,
+    alpha: float = 0.6,
+) -> torch.Tensor:
+    """
+    带长度惩罚的束搜索解码。
+
+    参数:
+        step_fn: 输入 [1, cur_len]，返回 [1, vocab_size] logits。
+        prompt_tokens: [prompt_len] 或 [1, prompt_len]。
+        beam_size: 束宽。
+        max_new_tokens: 最多新生成 token 数。
+        eos_id: 结束符；None 表示不按 EOS 完结。
+        alpha: 长度惩罚系数。
+
+    返回:
+        归一化得分最高的一维长整型序列。
+    """
+    # 1. 统一 prompt_tokens 形状为 1D 向量
+    if prompt_tokens.dim() == 2:
+        prompt_tokens = prompt_tokens.squeeze(0)
+    prompt_tokens = prompt_tokens.to(dtype=torch.long)
+    device = prompt_tokens.device
+
+    # 标准长度惩罚公式 (Google GNMT / Attention is All You Need)
+    def length_penalty(length: int) -> float:
+        return ((5.0 + length) / 6.0) ** alpha
+
+    # 每个束维护一个元组: (累积 log_prob, 序列张量, 是否已结束)
+    beams = [(0.0, prompt_tokens, False)]
+    completed = []
+
+    for _ in range(max_new_tokens):
+        all_candidates = []
+
+        for score, seq, is_done in beams:
+            if is_done:
+                # 已经结束的束不再扩展，直接保留进入候选
+                all_candidates.append((score, seq, True))
+                continue
+
+            # 按接口要求输入 [1, cur_len]
+            inp = seq.unsqueeze(0)
+            logits = step_fn(inp)  # [1, vocab_size]
+            log_probs = F.log_softmax(logits.squeeze(0), dim=-1)  # [vocab_size]
+
+            # 取当前束 topk 扩展（最多看 beam_size 个最大可能词）
+            topk_log_probs, topk_ids = torch.topk(log_probs, k=min(beam_size, log_probs.size(0)))
+
+            for lp, token_id in zip(topk_log_probs, topk_ids):
+                token_item = token_id.item()
+                new_seq = torch.cat([seq, token_id.unsqueeze(0)])
+                new_score = score + lp.item()
+
+                if eos_id is not None and token_item == eos_id:
+                    # 遇到 EOS，标记为完结束并存入 completed 候选集
+                    all_candidates.append((new_score, new_seq, True))
+                else:
+                    all_candidates.append((new_score, new_seq, False))
+
+        # 根据累积得分进行排序剪枝，保留前 beam_size 个最优候选
+        # 未完成的优先比较累积 log_prob 即可
+        all_candidates.sort(key=lambda x: x[0], reverse=True)
+        beams = all_candidates[:beam_size]
+
+        # 检查是否所有 beam 都已经生成了 EOS 完结
+        if all(is_done for _, _, is_done in beams):
+            break
+
+    # 收集最终用于评估归一化得分的候选池（已完结的 + 最终活跃的）
+    final_candidates = [b for b in beams if b[2]]  # 已正常完成的
+    if not final_candidates:
+        # 如果没有任何束遇到 EOS 结束，则从所有现存 beam 里选
+        final_candidates = beams
+
+    # 计算带长度惩罚的归一化得分: normalized_score = score / lp(len)
+    best_seq = None
+    best_norm_score = float('-inf')
+
+    for score, seq, _ in final_candidates:
+        seq_len = seq.size(0)
+        norm_score = score / length_penalty(seq_len)
+        if norm_score > best_norm_score:
+            best_norm_score = norm_score
+            best_seq = seq
+
+    return best_seq
 
 # Step 23 - __init__ (not yet solved)
 # TODO: implement
