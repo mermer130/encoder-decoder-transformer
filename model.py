@@ -223,8 +223,23 @@ def subsequent_mask(
     mask = torch.tril(torch.ones((size, size), dtype=torch.bool, device=device))
     return mask.unsqueeze(0).unsqueeze(0)
 
-# Step 8 - 目标端 Padding 与因果掩码 (not yet solved)
-# TODO: implement
+# Step 8 - make_tgt_mask
+import torch
+
+def make_tgt_mask(tgt_ids: torch.Tensor, pad_id: int) -> torch.Tensor:
+    B, L = tgt_ids.shape
+    device = tgt_ids.device
+
+    # 1. padding 分支: 形状 (B, 1, 1, L)
+    # 只要 key 位置不是 pad_id 则为 True
+    pad_mask = (tgt_ids != pad_id).unsqueeze(1).unsqueeze(2)
+
+    # 2. 因果分支: 形状 (1, 1, L, L)
+    # 下三角矩阵 (包含对角线)，j <= i 的位置为 True
+    causal_mask = torch.tril(torch.ones((L, L), dtype=torch.bool, device=device)).unsqueeze(0).unsqueeze(1)
+
+    # 3. 两条分支广播做逻辑与 (&)，得到形状 (B, 1, L, L) 的布尔掩码
+    return pad_mask & causal_mask
 
 # Step 9 - __init__
 import math
