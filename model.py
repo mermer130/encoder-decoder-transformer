@@ -2119,33 +2119,265 @@ class Transformer(nn.Module):
                 break
         return tokens
 
-# Step 24 - subsequent_mask
+# Step 24 - sinusoidal_encoding
+from __future__ import annotations
+
+import copy
+import math
+from typing import Callable, Optional, Tuple
+
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
-def subsequent_mask(size, device=None):
-    # 下三角：每个位置只能看见自己和它左边的词
-    return torch.tril(torch.ones(size, size, dtype=torch.bool, device=device)).view(1, 1, size, size)
+def sinusoidal_encoding(max_len: int, d_model: int, device=None) -> torch.Tensor:
+    pe = torch.zeros(max_len, d_model, dtype=torch.float32, device=device)
+    if max_len == 0:
+        return pe
+    position = torch.arange(0, max_len, dtype=torch.float32, device=device).unsqueeze(1)
+    div_term = torch.exp(
+        torch.arange(0, d_model, 2, dtype=torch.float32, device=device) * -(math.log(10000.0) / d_model)
+    )
+    phase = position * div_term
+    pe[:, 0::2] = torch.sin(phase)
+    pe[:, 1::2] = torch.cos(phase)
+    return pe
 
-def make_src_mask(src_ids, pad_id):
-    # True 表示这个位置是真词，不是 padding
+def make_src_mask(src_ids: torch.Tensor, pad_id: int) -> torch.Tensor:
     return (src_ids != pad_id).unsqueeze(1).unsqueeze(2)
 
-def make_tgt_mask(tgt_ids, pad_id):
-    length = tgt_ids.size(1)
-    pad_mask = (tgt_ids != pad_id).unsqueeze(1).unsqueeze(2)
-    return pad_mask & subsequent_mask(length, tgt_ids.device)
+def subsequent_mask(size: int, device=None) -> torch.Tensor:
+    return torch.tril(torch.ones((size, size), dtype=torch.bool, device=device)).view(1, 1, size, size)
 
-def greedy_decode(step_fn, bos_id, eos_id, max_len=50, device=None):
-    # 从起始符开始，每次接上分数最大的那个 id
-    current = torch.tensor([[bos_id]], dtype=torch.long, device=device)
+def make_tgt_mask(tgt_ids: torch.Tensor, pad_id: int) -> torch.Tensor:
+    _, length = tgt_ids.shape
+    device = tgt_ids.device
+    pad_mask = (tgt_ids != pad_id).unsqueeze(1).unsqueeze(2)
+    causal_mask = torch.tril(torch.ones((length, length), dtype=torch.bool, device=device)).view(1, 1, length, length)
+    return pad_mask & causal_mask
+
+def clones(module: nn.Module, n: int) -> nn.ModuleList:
+    return nn.ModuleList([copy.deepcopy(module) for _ in range(n)])
+
+def shift_targets_right(target_ids: torch.Tensor, bos_id: int) -> torch.Tensor:
+    shifted = torch.empty_like(target_ids)
+    shifted[:, 0] = bos_id
+    if target_ids.size(1) > 1:
+        shifted[:, 1:] = target_ids[:, :-1]
+    return shifted
+
+class TokenEmbedding(nn.Module):
+    def __init__(self, vocab_size: int, d_model: int):
+        super().__init__()
+        self.d_model = d_model
+        self.lut = nn.Embedding(vocab_size, d_model)
+
+    def forward(self, token_ids: torch.Tensor) -> torch.Tensor:
+        return self.lut(token_ids) * math.sqrt(self.d_model)
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
+        super().__init__()
+        self.dropout = nn.Dropout(dropout)
+        pe = sinusoidal_encoding(max_len, d_model)
+        if pe.dim() == 2:
+            pe = pe.unsqueeze(0)
+        self.register_buffer("pe", pe)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x + self.pe[:, : x.size(1)].to(dtype=x.dtype)
+        return self.dropout(x)
+
+class ScaledDotProductAttention(nn.Module):
+    def __init__(self, dropout_p: float = 0.0):
+        super().__init__()
+        self.dropout = nn.Dropout(dropout_p)
+
+    def forward(self, q, k, v, mask=None):
+        scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(q.size(-1))
+        if mask is not None:
+            scores = scores.masked_fill(mask == 0, float("-inf"))
+        weights = F.softmax(scores, dim=-1)
+        return torch.matmul(self.dropout(weights), v), weights
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self, embed_dim: int, num_heads: int):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+        self.W_q = nn.Linear(embed_dim, embed_dim)
+        self.W_k = nn.Linear(embed_dim, embed_dim)
+        self.W_v = nn.Linear(embed_dim, embed_dim)
+        self.W_o = nn.Linear(embed_dim, embed_dim)
+        self.attention = ScaledDotProductAttention()
+
+    def forward(self, x, mask=None):
+        batch, length, _ = x.shape
+        q = self.W_q(x).view(batch, length, self.num_heads, self.head_dim).transpose(1, 2)
+        k = self.W_k(x).view(batch, length, self.num_heads, self.head_dim).transpose(1, 2)
+        v = self.W_v(x).view(batch, length, self.num_heads, self.head_dim).transpose(1, 2)
+        if mask is not None and mask.dim() == 3:
+            mask = mask.unsqueeze(1)
+        out, _ = self.attention(q, k, v, mask=mask)
+        out = out.transpose(1, 2).contiguous().view(batch, length, self.embed_dim)
+        return self.W_o(out)
+
+class CrossAttention(nn.Module):
+    def __init__(self, embed_dim: int, num_heads: int = 1):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+        self.W_q = nn.Linear(embed_dim, embed_dim)
+        self.W_k = nn.Linear(embed_dim, embed_dim)
+        self.W_v = nn.Linear(embed_dim, embed_dim)
+        self.W_o = nn.Linear(embed_dim, embed_dim)
+        self.attention = ScaledDotProductAttention()
+
+    def forward(self, x, memory, mask=None):
+        batch, q_len, _ = x.shape
+        _, k_len, _ = memory.shape
+        q = self.W_q(x).view(batch, q_len, self.num_heads, self.head_dim).transpose(1, 2)
+        k = self.W_k(memory).view(batch, k_len, self.num_heads, self.head_dim).transpose(1, 2)
+        v = self.W_v(memory).view(batch, k_len, self.num_heads, self.head_dim).transpose(1, 2)
+        if mask is not None and mask.dim() == 3:
+            mask = mask.unsqueeze(1)
+        out, _ = self.attention(q, k, v, mask=mask)
+        out = out.transpose(1, 2).contiguous().view(batch, q_len, self.embed_dim)
+        return self.W_o(out)
+
+class LayerNorm(nn.Module):
+    def __init__(self, model_dim: int, eps: float = 1e-5):
+        super().__init__()
+        self.eps = eps
+        self.gamma = nn.Parameter(torch.ones(model_dim))
+        self.beta = nn.Parameter(torch.zeros(model_dim))
+
+    def forward(self, x):
+        mean = x.mean(dim=-1, keepdim=True)
+        var = x.var(dim=-1, keepdim=True, unbiased=False)
+        return ((x - mean) / torch.sqrt(var + self.eps)) * self.gamma + self.beta
+
+class FFN(nn.Module):
+    def __init__(self, model_dim: int, intermediate_dim: int):
+        super().__init__()
+        self.w_up = nn.Linear(model_dim, intermediate_dim)
+        self.w_down = nn.Linear(intermediate_dim, model_dim)
+
+    def forward(self, x):
+        return self.w_down(F.relu(self.w_up(x)))
+
+class EncoderLayer(nn.Module):
+    def __init__(self, d_model, self_attn, feed_forward, dropout=0.1):
+        super().__init__()
+        self.d_model = d_model
+        self.self_attn = self_attn
+        self.feed_forward = feed_forward
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x, mask=None):
+        x = self.norm1(x + self.dropout(self.self_attn(x, mask=mask)))
+        x = self.norm2(x + self.dropout(self.feed_forward(x)))
+        return x
+
+class Encoder(nn.Module):
+    def __init__(self, layer, n):
+        super().__init__()
+        self.layers = clones(layer, n)
+        d_model = layer.d_model if hasattr(layer, "d_model") else 512
+        self.norm = nn.LayerNorm(d_model)
+
+    def forward(self, x, mask=None):
+        for layer in self.layers:
+            x = layer(x, mask=mask)
+        return self.norm(x)
+
+class DecoderLayer(nn.Module):
+    def __init__(self, d_model, self_attn, src_attn, feed_forward, dropout=0.1):
+        super().__init__()
+        self.d_model = d_model
+        self.self_attn = self_attn
+        self.src_attn = src_attn
+        self.feed_forward = feed_forward
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.norm3 = nn.LayerNorm(d_model)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x, memory, src_mask=None, tgt_mask=None):
+        x = self.norm1(x + self.dropout(self.self_attn(x, mask=tgt_mask)))
+        x = self.norm2(x + self.dropout(self.src_attn(x, memory, mask=src_mask)))
+        x = self.norm3(x + self.dropout(self.feed_forward(x)))
+        return x
+
+class Decoder(nn.Module):
+    def __init__(self, layer, n):
+        super().__init__()
+        self.layers = clones(layer, n)
+        d_model = layer.d_model if hasattr(layer, "d_model") else 512
+        self.norm = nn.LayerNorm(d_model)
+
+    def forward(self, x, memory, src_mask=None, tgt_mask=None):
+        for layer in self.layers:
+            x = layer(x, memory, src_mask, tgt_mask)
+        return self.norm(x)
+
+class Generator(nn.Module):
+    def __init__(self, d_model, vocab_size):
+        super().__init__()
+        self.proj = nn.Linear(d_model, vocab_size)
+
+    def forward(self, x):
+        return F.log_softmax(self.proj(x), dim=-1)
+
+def greedy_decode(step_fn, bos_id=1, eos_id=2, max_len=50, device=None):
+    tokens = torch.tensor([[bos_id]], dtype=torch.long, device=device)
     for _ in range(max_len - 1):
-        logits = step_fn(current)
+        logits = step_fn(tokens)
         next_token = torch.argmax(logits, dim=-1, keepdim=True)
-        current = torch.cat([current, next_token], dim=1)
-        if int(next_token.item()) == int(eos_id):
+        tokens = torch.cat([tokens, next_token], dim=1)
+        if eos_id is not None and int(next_token.reshape(-1)[0]) == int(eos_id):
             break
-    return current
+    return tokens
+
+class Transformer(nn.Module):
+    def __init__(self, encoder, decoder, src_embed, tgt_embed, generator):
+        super().__init__()
+        self.encoder = encoder
+        self.decoder = decoder
+        self.src_embed = src_embed
+        self.tgt_embed = tgt_embed
+        self.generator = generator
+
+    def encode(self, src, src_mask=None):
+        return self.encoder(self.src_embed(src), mask=src_mask)
+
+    def decode(self, memory, tgt, src_mask=None, tgt_mask=None):
+        return self.decoder(self.tgt_embed(tgt), memory, src_mask=src_mask, tgt_mask=tgt_mask)
+
+    def forward(self, src, tgt, src_mask=None, tgt_mask=None):
+        memory = self.encode(src, src_mask)
+        hidden = self.decode(memory, tgt, src_mask, tgt_mask)
+        return self.generator(hidden)
+
+    @torch.no_grad()
+    def generate(self, src, src_mask, max_len=50, bos_id=1, eos_id=None):
+        self.eval()
+        memory = self.encode(src, src_mask)
+        tokens = torch.full((src.size(0), 1), int(bos_id), dtype=torch.long, device=src.device)
+        for _ in range(int(max_len) - 1):
+            tgt_mask = subsequent_mask(tokens.size(1)).to(device=tokens.device)
+            hidden = self.decode(memory, tokens, src_mask, tgt_mask)
+            step = hidden[:, -1] if hidden.dim() == 3 else hidden
+            logits = self.generator(step)
+            next_token = torch.argmax(logits, dim=-1)
+            tokens = torch.cat([tokens, next_token.unsqueeze(1)], dim=1)
+            if eos_id is not None and bool((next_token == int(eos_id)).all()):
+                break
+        return tokens
 
 class NeuralMachineTranslator:
     def __init__(self, model, optimizer, pad_id=0, bos_id=1, eos_id=2):
@@ -2159,7 +2391,6 @@ class NeuralMachineTranslator:
     def train_step(self, src_batch, tgt_batch, max_grad_norm=1.0):
         self.model.train()
         self.optimizer.zero_grad()
-        # 目标序列已经带起始符：少看最后一个词当输入，少看开头当标签
         tgt_in = tgt_batch[:, :-1]
         tgt_out = tgt_batch[:, 1:]
         src_mask = make_src_mask(src_batch, self.pad_id)
@@ -2169,7 +2400,7 @@ class NeuralMachineTranslator:
         loss = self.criterion(logits.reshape(-1, vocab), tgt_out.reshape(-1))
         loss.backward()
         if max_grad_norm is not None and max_grad_norm > 0:
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=max_grad_norm)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_grad_norm)
         self.optimizer.step()
         return float(loss.item())
 
@@ -2182,7 +2413,9 @@ class NeuralMachineTranslator:
         def step_fn(tokens):
             tgt_mask = make_tgt_mask(tokens, self.pad_id)
             hidden = self.model.decode(memory, src_mask, tokens, tgt_mask)
-            logits = self.model.generator(hidden[:, -1, :])
+            generator = getattr(self.model, "generator", None)
+            step = hidden[:, -1, :]
+            logits = generator(step) if generator is not None else step
             if logits.dim() == 1:
                 logits = logits.unsqueeze(0)
             return logits
