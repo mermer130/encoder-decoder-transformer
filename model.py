@@ -1227,7 +1227,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 class Generator(nn.Module):
     """
     【第 19 题】词表生成器 (Generator)
@@ -1241,11 +1240,11 @@ class Generator(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         前向传播计算对数概率
-        
+
         参数:
             x: Decoder 输出的隐藏状态张量，形状为 (B, L, d_model)
                或单步解码时的 (B, d_model)
-               
+
         返回:
             沿词表维进行 log_softmax 归一化后的对数概率张量，形状为 (B, L, vocab_size)
         """
