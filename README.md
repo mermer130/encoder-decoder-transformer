@@ -30,7 +30,7 @@ python scaffold.py
 - [x] **18.** __init__
 - [x] **19.** shift_targets_right
 - [ ] **20.** __init__
-- [ ] **21.** greedy_decode
+- [x] **21.** greedy_decode
 - [ ] **22.** beam_search_decode
 - [ ] **23.** __init__
 - [ ] **24.** subsequent_mask
