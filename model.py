@@ -38,32 +38,79 @@ def bpe_tokenize(text: str, merges: List[Tuple[str, str]]) -> List[str]:
         result.extend(tokens)
     return result
 
-# Step 2 - build_token_id_matrix
-from typing import List, Dict
+# Step 2 - bpe_tokenize
+from typing import List, Tuple, Dict
 
-def build_token_id_matrix(
-    batch_tokens: List[List[str]],
+# From problem: BPE Tokenizer
+def bpe_tokenize(text: str, merges: List[Tuple[str, str]]) -> List[str]:
+    result: List[str] = []
+
+    for word in text.split(' '):
+        tokens = list(word) + ['</w>']  # 拆成单字符，末尾加词尾符
+        while True:
+            # 1. 按优先级从高到低，找第一条能匹配到相邻 token 对的规则
+            merge_idx = None
+            for rank, (a, b) in enumerate(merges):
+                if any(tokens[i] == a and tokens[i + 1] == b
+                       for i in range(len(tokens) - 1)):
+                    merge_idx = rank
+                    break
+            if merge_idx is None:  # 没有规则能用了，结束这个单词
+                break
+            a, b = merges[merge_idx]
+            # 2. 从左到右扫描，非重叠地合并所有匹配到的相邻位置
+            new_tokens = []
+            i = 0
+            while i < len(tokens):
+                if i + 1 < len(tokens) and tokens[i] == a and tokens[i + 1] == b:
+                    new_tokens.append(a + b)
+                    i += 2  # 跳过已合并的两个 token，避免重叠
+                else:
+                    new_tokens.append(tokens[i])
+                    i += 1
+            tokens = new_tokens
+            # 3. 回到循环开头，重新从优先级最高的规则开始检查
+        result.extend(tokens)
+    return result
+
+def texts_to_token_matrix(
+    texts: List[str],
+    merges: List[Tuple[str, str]],
     vocab: Dict[str, int],
-    max_len: int
+    pad_id: int = 0,
+    bos_id: int = 1,
+    eos_id: int = 2,
+    unk_id: int = 3,
 ) -> List[List[int]]:
-    matrix = []
-    pad_id = vocab['<pad>']
-    unk_id = vocab['<unk>']
-    bos_id = vocab['<bos>']
-    eos_id = vocab['<eos>']
-    
-    for tokens in batch_tokens:
-        # 1. 前后加上 <bos> 和 <eos>
-        seq = ['<bos>'] + tokens + ['<eos>']
-        # 2. token转id，未知token替换为<unk>
-        ids = [vocab.get(tok, unk_id) for tok in seq]
-        # 3. 截断到max_len
-        ids = ids[:max_len]
-        # 4. 末尾补<pad>直到长度等于max_len
-        pad_needed = max_len - len(ids)
-        ids += [pad_id] * pad_needed
-        matrix.append(ids)
-    return matrix
+    """
+    将文本列表转换为带 BOS/EOS 并补齐 PAD 的 Token ID 矩阵。
+    """
+    if not texts:
+        return []
+
+    # 1. 对每句话分词并转换为带 BOS 和 EOS 的 ID 序列
+    batch_ids: List[List[int]] = []
+    max_len = 0
+
+    for text in texts:
+        # 分词得到 BPE tokens
+        tokens = bpe_tokenize(text, merges)
+        # 查表映射，不存在的使用 unk_id
+        ids = [vocab.get(tok, unk_id) for tok in tokens]
+        # 首部加 BOS，尾部加 EOS
+        seq = [bos_id] + ids + [eos_id]
+        batch_ids.append(seq)
+        
+        if len(seq) > max_len:
+            max_len = len(seq)
+
+    # 2. 对每个序列末尾填充 pad_id 直到 max_len
+    padded_matrix: List[List[int]] = []
+    for seq in batch_ids:
+        pad_count = max_len - len(seq)
+        padded_matrix.append(seq + [pad_id] * pad_count)
+
+    return padded_matrix
 
 # Step 3 - __init__
 import math
