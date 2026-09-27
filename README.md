@@ -11,7 +11,7 @@ python scaffold.py
 ## Steps
 
 - [x] **1.** bpe_tokenize
-- [x] **2.** build_token_id_matrix
+- [x] **2.** bpe_tokenize
 - [x] **3.** __init__
 - [x] **4.** sinusoidal_encoding
 - [x] **5.** sinusoidal_encoding
