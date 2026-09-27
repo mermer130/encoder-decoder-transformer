@@ -7,7 +7,7 @@ Uses functions defined in model.py.
 from model import *  # noqa: F401, F403
 
 def main():
-    print("loaded shift_targets_right from model.py")
+    print("loaded greedy_decode from model.py")
 
 if __name__ == "__main__":
     main()
