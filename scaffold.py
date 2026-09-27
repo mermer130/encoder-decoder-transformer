@@ -7,7 +7,7 @@ Uses functions defined in model.py.
 from model import *  # noqa: F401, F403
 
 def main():
-    print("loaded beam_search_decode from model.py")
+    print("loaded subsequent_mask from model.py")
 
 if __name__ == "__main__":
     main()
