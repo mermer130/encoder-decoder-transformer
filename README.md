@@ -33,4 +33,4 @@ python scaffold.py
 - [x] **21.** greedy_decode
 - [x] **22.** beam_search_decode
 - [ ] **23.** __init__
-- [ ] **24.** subsequent_mask
+- [x] **24.** subsequent_mask
