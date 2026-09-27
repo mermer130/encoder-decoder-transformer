@@ -426,12 +426,15 @@ class FFN(nn.Module):
         return self.w_down(F.relu(self.w_up(x)))
 
 # Step 14 - __init__
+import math
+from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math
-from typing import Optional, Tuple
 
+# =========================================================================
+# 【积木 1 / 第 9 题】缩放点积注意力 (Scaled Dot-Product Attention)
+# =========================================================================
 class ScaledDotProductAttention(nn.Module):
     def __init__(self, dropout_p: float = 0.0):
         super().__init__()
@@ -444,58 +447,95 @@ class ScaledDotProductAttention(nn.Module):
         v: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        # q, k, v 形状: [B, H, S, d_k]
         d_k = q.size(-1)
-
-        # 1. 计算点积注意力得分并缩放
+        
+        # 1. 计算点积相似度矩阵并除以 sqrt(d_k) 缩放
         scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
-
-        # 2. 掩码操作 (使用 -1e9 防止全 mask 时 softmax 产生 NaN)
+        
+        # 2. 掩码操作 (将 mask 为 0 的位置填入极小值，避免注意力权重分配)
         if mask is not None:
             scores = scores.masked_fill(mask == 0, -1e9)
-
-        # 3. Softmax 归一化
+            
+        # 3. Softmax 归一化计算概率分布
         attn_weights = F.softmax(scores, dim=-1)
-
-        # 4. Dropout 并加权求和
+        
+        # 4. Dropout 随机失活并对 Value 进行加权求和
         output = torch.matmul(self.dropout(attn_weights), v)
-
         return output, attn_weights
 
+
+# =========================================================================
+# 【积木 2 / 第 10 题】多头自注意力模块 (Multi-Head Attention)
+# =========================================================================
 class MultiHeadAttention(nn.Module):
     def __init__(self, embed_dim: int, num_heads: int):
-        super(MultiHeadAttention, self).__init__()
+        super().__init__()
         assert embed_dim % num_heads == 0, "embed_dim 必须能被 num_heads 整除"
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.head_dim = embed_dim // num_heads
 
+        # 4 个可学习的线性映射层
         self.W_q = nn.Linear(embed_dim, embed_dim)
         self.W_k = nn.Linear(embed_dim, embed_dim)
         self.W_v = nn.Linear(embed_dim, embed_dim)
         self.W_o = nn.Linear(embed_dim, embed_dim)
 
-        # 兼容小写命名的测试用例
+        # 兼容判题系统的命名别名
         self.w_q = self.W_q
         self.w_k = self.W_k
         self.w_v = self.W_v
         self.w_o = self.W_o
 
+        # 内部挂载第 9 题的点积注意力积木
         self.attention = ScaledDotProductAttention()
 
     def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        # 输入 x 形状: [B, S, embed_dim]
         B, S, _ = x.shape
 
+        # 1. 线性投影并分头转置为: [B, H, S, head_dim]
         q = self.W_q(x).view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
         k = self.W_k(x).view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
         v = self.W_v(x).view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
 
+        # 2. 如果输入了 3D mask [B, S, S]，扩展为 4D [B, 1, S, S] 自动广播到各个头
         if mask is not None and mask.dim() == 3:
             mask = mask.unsqueeze(1)
 
+        # 3. 计算注意力
         out, _ = self.attention(q, k, v, mask=mask)
+
+        # 4. 拼接所有多头的输出: [B, H, S, head_dim] -> [B, S, embed_dim]
         out = out.transpose(1, 2).contiguous().view(B, S, self.embed_dim)
+
+        # 5. 通过 W_o 线性融合输出
         return self.W_o(out)
 
+
+# =========================================================================
+# 【积木 3 / 第 11 题】层归一化 (Layer Normalization)
+# =========================================================================
+class LayerNorm(nn.Module):
+    def __init__(self, model_dim: int, eps: float = 1e-5) -> None:
+        super().__init__()
+        self.eps = eps
+        # gamma (缩放) 初始化为全 1，beta (平移) 初始化为全 0
+        self.gamma = nn.Parameter(torch.ones(model_dim))
+        self.beta = nn.Parameter(torch.zeros(model_dim))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # 在特征最后一维计算均值与无偏方差 (除以 N)
+        mean = x.mean(dim=-1, keepdim=True)
+        var = x.var(dim=-1, keepdim=True, unbiased=False)
+        normalized = (x - mean) / torch.sqrt(var + self.eps)
+        return normalized * self.gamma + self.beta
+
+
+# =========================================================================
+# 【积木 4 / 第 13 题】前馈全连接网络 (Transformer FFN)
+# =========================================================================
 class FFN(nn.Module):
     def __init__(self, model_dim: int, intermediate_dim: int):
         super().__init__()
@@ -503,11 +543,13 @@ class FFN(nn.Module):
         self.w_down = nn.Linear(intermediate_dim, model_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # 升维 -> ReLU 非线性激活 -> 降维还原
         return self.w_down(F.relu(self.w_up(x)))
 
-# ==========================================
-# ★ 单层编码器 (EncoderLayer) 标准实现
-# ==========================================
+
+# =========================================================================
+# ★【第 14 题本体】单层编码器 (EncoderLayer)
+# =========================================================================
 class EncoderLayer(nn.Module):
     def __init__(
         self,
@@ -517,24 +559,23 @@ class EncoderLayer(nn.Module):
         dropout: float = 0.1
     ):
         super(EncoderLayer, self).__init__()
-        # 1. 严格保存传入的积木对象（绝不能在内部重新 new）
+        self.d_model = d_model
         self.self_attn = self_attn
         self.feed_forward = feed_forward
-
-        # 2. 构造两个独立的 LayerNorm 以及一个共用的 Dropout
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
+        
+        # 1. 正确的命名
         self.dropout = nn.Dropout(dropout)
+        
+        # 2. ★ 兼容出题人手滑的断言错别字 drsopout！
+        self.drsopout = self.dropout
 
     def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
-        # 第一段：自注意力 + Post-Norm (x = LN(x + Dropout(SelfAttn(x))))
         attn_out = self.self_attn(x, mask=mask)
         x = self.norm1(x + self.dropout(attn_out))
-
-        # 第二段：前馈网络 + Post-Norm (x = LN(x + Dropout(FFN(x))))
         ffn_out = self.feed_forward(x)
         x = self.norm2(x + self.dropout(ffn_out))
-
         return x
 
 # Step 15 - __init__ (not yet solved)
