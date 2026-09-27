@@ -29,7 +29,7 @@ python scaffold.py
 - [x] **17.** clones
 - [x] **18.** __init__
 - [x] **19.** shift_targets_right
-- [ ] **20.** __init__
+- [x] **20.** __init__
 - [x] **21.** greedy_decode
 - [x] **22.** beam_search_decode
 - [ ] **23.** __init__
