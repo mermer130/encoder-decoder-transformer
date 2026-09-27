@@ -366,39 +366,110 @@ class FFN(nn.Module):
 # Step 14 - __init__
 import torch
 import torch.nn as nn
-from typing import Optional
+import torch.nn.functional as F
+import math
+from typing import Optional, Tuple
 
+class ScaledDotProductAttention(nn.Module):
+    def __init__(self, dropout_p: float = 0.0):
+        super().__init__()
+        self.dropout = nn.Dropout(dropout_p)
+
+    def forward(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        d_k = q.size(-1)
+
+        # 1. 计算点积注意力得分并缩放
+        scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
+
+        # 2. 掩码操作 (使用 -1e9 防止全 mask 时 softmax 产生 NaN)
+        if mask is not None:
+            scores = scores.masked_fill(mask == 0, -1e9)
+
+        # 3. Softmax 归一化
+        attn_weights = F.softmax(scores, dim=-1)
+
+        # 4. Dropout 并加权求和
+        output = torch.matmul(self.dropout(attn_weights), v)
+
+        return output, attn_weights
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self, embed_dim: int, num_heads: int):
+        super(MultiHeadAttention, self).__init__()
+        assert embed_dim % num_heads == 0, "embed_dim 必须能被 num_heads 整除"
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+
+        self.W_q = nn.Linear(embed_dim, embed_dim)
+        self.W_k = nn.Linear(embed_dim, embed_dim)
+        self.W_v = nn.Linear(embed_dim, embed_dim)
+        self.W_o = nn.Linear(embed_dim, embed_dim)
+
+        # 兼容小写命名的测试用例
+        self.w_q = self.W_q
+        self.w_k = self.W_k
+        self.w_v = self.W_v
+        self.w_o = self.W_o
+
+        self.attention = ScaledDotProductAttention()
+
+    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        B, S, _ = x.shape
+
+        q = self.W_q(x).view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
+        k = self.W_k(x).view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
+        v = self.W_v(x).view(B, S, self.num_heads, self.head_dim).transpose(1, 2)
+
+        if mask is not None and mask.dim() == 3:
+            mask = mask.unsqueeze(1)
+
+        out, _ = self.attention(q, k, v, mask=mask)
+        out = out.transpose(1, 2).contiguous().view(B, S, self.embed_dim)
+        return self.W_o(out)
+
+class FFN(nn.Module):
+    def __init__(self, model_dim: int, intermediate_dim: int):
+        super().__init__()
+        self.w_up = nn.Linear(model_dim, intermediate_dim)
+        self.w_down = nn.Linear(intermediate_dim, model_dim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.w_down(F.relu(self.w_up(x)))
+
+# ==========================================
+# ★ 单层编码器 (EncoderLayer) 标准实现
+# ==========================================
 class EncoderLayer(nn.Module):
     def __init__(
         self,
-        d_model: int,              # 模型维度 (如 512)
-        self_attn: nn.Module,      # 多头自注意力模块 MultiHeadAttention
-        feed_forward: nn.Module,   # 前馈网络 PositionwiseFeedForward
+        d_model: int,
+        self_attn: nn.Module,
+        feed_forward: nn.Module,
         dropout: float = 0.1
     ):
         super(EncoderLayer, self).__init__()
-        self.d_model = d_model
+        # 1. 严格保存传入的积木对象（绝不能在内部重新 new）
         self.self_attn = self_attn
         self.feed_forward = feed_forward
 
-        # 两个子层各自配备一个 LayerNorm
+        # 2. 构造两个独立的 LayerNorm 以及一个共用的 Dropout
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
-        
-        # 残差分支的 Dropout
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
-        """
-        x: [batch_size, seq_len, d_model]
-        mask: 掩码矩阵
-        """
-        # 1. 第一个子层：多头自注意力 -> Dropout -> 残差相加 -> LayerNorm
-        # (如果你的 self_attn 签名只接收一个 x，写 self.self_attn(x, mask=mask) 即可)
+        # 第一段：自注意力 + Post-Norm (x = LN(x + Dropout(SelfAttn(x))))
         attn_out = self.self_attn(x, mask=mask)
         x = self.norm1(x + self.dropout(attn_out))
 
-        # 2. 第二个子层：前馈网络 (FFN) -> Dropout -> 残差相加 -> LayerNorm
+        # 第二段：前馈网络 + Post-Norm (x = LN(x + Dropout(FFN(x))))
         ffn_out = self.feed_forward(x)
         x = self.norm2(x + self.dropout(ffn_out))
 
