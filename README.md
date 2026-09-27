@@ -17,7 +17,7 @@ python scaffold.py
 - [x] **5.** sinusoidal_encoding
 - [x] **6.** make_src_mask
 - [x] **7.** subsequent_mask
-- [ ] **8.** 目标端 Padding 与因果掩码
+- [x] **8.** make_tgt_mask
 - [x] **9.** __init__
 - [x] **10.** __init__
 - [x] **11.** __init__
