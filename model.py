@@ -786,5 +786,72 @@ def beam_search_decode(
 # Step 23 - __init__ (not yet solved)
 # TODO: implement
 
-# Step 24 - subsequent_mask (not yet solved)
-# TODO: implement
+# Step 24 - subsequent_mask
+import torch
+import torch.nn as nn
+
+def subsequent_mask(size, device=None):
+    # 下三角：每个位置只能看见自己和它左边的词
+    return torch.tril(torch.ones(size, size, dtype=torch.bool, device=device)).view(1, 1, size, size)
+
+def make_src_mask(src_ids, pad_id):
+    # True 表示这个位置是真词，不是 padding
+    return (src_ids != pad_id).unsqueeze(1).unsqueeze(2)
+
+def make_tgt_mask(tgt_ids, pad_id):
+    length = tgt_ids.size(1)
+    pad_mask = (tgt_ids != pad_id).unsqueeze(1).unsqueeze(2)
+    return pad_mask & subsequent_mask(length, tgt_ids.device)
+
+def greedy_decode(step_fn, bos_id, eos_id, max_len=50, device=None):
+    # 从起始符开始，每次接上分数最大的那个 id
+    current = torch.tensor([[bos_id]], dtype=torch.long, device=device)
+    for _ in range(max_len - 1):
+        logits = step_fn(current)
+        next_token = torch.argmax(logits, dim=-1, keepdim=True)
+        current = torch.cat([current, next_token], dim=1)
+        if int(next_token.item()) == int(eos_id):
+            break
+    return current
+
+class NeuralMachineTranslator:
+    def __init__(self, model, optimizer, pad_id=0, bos_id=1, eos_id=2):
+        self.model = model
+        self.optimizer = optimizer
+        self.pad_id = pad_id
+        self.bos_id = bos_id
+        self.eos_id = eos_id
+        self.criterion = nn.CrossEntropyLoss(ignore_index=pad_id)
+
+    def train_step(self, src_batch, tgt_batch, max_grad_norm=1.0):
+        self.model.train()
+        self.optimizer.zero_grad()
+        # 目标序列已经带起始符：少看最后一个词当输入，少看开头当标签
+        tgt_in = tgt_batch[:, :-1]
+        tgt_out = tgt_batch[:, 1:]
+        src_mask = make_src_mask(src_batch, self.pad_id)
+        tgt_mask = make_tgt_mask(tgt_in, self.pad_id)
+        logits = self.model(src_batch, tgt_in, src_mask, tgt_mask)
+        vocab = logits.size(-1)
+        loss = self.criterion(logits.reshape(-1, vocab), tgt_out.reshape(-1))
+        loss.backward()
+        if max_grad_norm is not None and max_grad_norm > 0:
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=max_grad_norm)
+        self.optimizer.step()
+        return float(loss.item())
+
+    @torch.no_grad()
+    def translate(self, src, max_len=25):
+        self.model.eval()
+        src_mask = make_src_mask(src, self.pad_id)
+        memory = self.model.encode(src, src_mask)
+
+        def step_fn(tokens):
+            tgt_mask = make_tgt_mask(tokens, self.pad_id)
+            hidden = self.model.decode(memory, src_mask, tokens, tgt_mask)
+            logits = self.model.generator(hidden[:, -1, :])
+            if logits.dim() == 1:
+                logits = logits.unsqueeze(0)
+            return logits
+
+        return greedy_decode(step_fn, self.bos_id, self.eos_id, max_len=max_len, device=src.device)
