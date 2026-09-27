@@ -24,7 +24,7 @@ python scaffold.py
 - [x] **12.** __init__
 - [x] **13.** __init__
 - [x] **14.** __init__
-- [ ] **15.** __init__
+- [x] **15.** clones
 - [x] **16.** __init__
 - [x] **17.** clones
 - [x] **18.** __init__
