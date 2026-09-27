@@ -12,7 +12,6 @@ def bpe_tokenize(text: str, merges: List[Tuple[str, str]]) -> List[str]:
 
     for word in text.split(' '):
         tokens = list(word) + ['</w>']  # 拆成单字符，末尾加词尾符
-
         while True:
             # 1. 按优先级从高到低，找第一条能匹配到相邻 token 对的规则
             merge_idx = None
@@ -21,12 +20,9 @@ def bpe_tokenize(text: str, merges: List[Tuple[str, str]]) -> List[str]:
                        for i in range(len(tokens) - 1)):
                     merge_idx = rank
                     break
-
             if merge_idx is None:  # 没有规则能用了，结束这个单词
                 break
-
             a, b = merges[merge_idx]
-
             # 2. 从左到右扫描，非重叠地合并所有匹配到的相邻位置
             new_tokens = []
             i = 0
@@ -39,9 +35,7 @@ def bpe_tokenize(text: str, merges: List[Tuple[str, str]]) -> List[str]:
                     i += 1
             tokens = new_tokens
             # 3. 回到循环开头，重新从优先级最高的规则开始检查
-
         result.extend(tokens)
-
     return result
 
 # Step 2 - build_token_id_matrix
@@ -471,8 +465,52 @@ def shift_targets_right(
 # Step 20 - __init__ (not yet solved)
 # TODO: implement
 
-# Step 21 - greedy_decode (not yet solved)
-# TODO: implement
+# Step 21 - greedy_decode
+import torch
+from typing import Callable, Optional
+
+def greedy_decode(
+    step_fn: Callable[[torch.Tensor], torch.Tensor],
+    bos_id: int = 1,
+    eos_id: int = 2,
+    max_len: int = 50,
+    device: Optional[torch.device] = None
+) -> torch.Tensor:
+    """
+    【第 21 题】自回归贪心解码 (Greedy Decoding)
+    
+    参数:
+        step_fn: 步进前向推理函数。
+                 输入当前已生成的 token 序列 [1, cur_len]，
+                 输出当前末尾步的未归一化 logits，形状为 [1, vocab_size]
+        bos_id:  句子起始符 <BOS> 的 ID
+        eos_id:  句子终止符 <EOS> 的 ID
+        max_len: 最大允许生成的 Token 序列长度
+        device:  运算设备 (CPU / CUDA)
+        
+    返回:
+        torch.Tensor: 生成的完整 Token 序列，形状为 [1, gen_len]
+    """
+    # 1. 初始化输入：仅包含一个 <BOS> 标记的起始张量 [1, 1]
+    current_tokens = torch.tensor([[bos_id]], dtype=torch.long, device=device)
+
+    # 2. 自回归循环向前推进，最多迭代 max_len - 1 次
+    for _ in range(max_len - 1):
+        # 调用单步前向函数，获得当前最新位置的 logits [1, vocab_size]
+        logits = step_fn(current_tokens)
+
+        # 贪心策略：直接在词表维度取数值最大（概率最高）的 Token ID
+        # next_token 形状: [1, 1]
+        next_token = torch.argmax(logits, dim=-1, keepdim=True)
+
+        # 将新预测出的 Token 追加到当前序列右侧 -> [1, cur_len + 1]
+        current_tokens = torch.cat([current_tokens, next_token], dim=1)
+
+        # 命中句子结束符 <EOS>，立刻提前跳出循环，避免多余计算
+        if next_token.item() == eos_id:
+            break
+
+    return current_tokens
 
 # Step 22 - beam_search_decode (not yet solved)
 # TODO: implement
